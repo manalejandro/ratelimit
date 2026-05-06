@@ -1,0 +1,31 @@
+# Build artefacts
+obj/
+ratelimit
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Config files with secrets / local overrides
+*.local.conf
+*.dev.conf
+
+# Core dumps
+core
+core.*
+
+# Profiling
+*.gcda
+*.gcno
+gmon.out
+perf.data*
+
+# Tags
+TAGS
+tags

@@ -1,0 +1,43 @@
+# ratelimit.conf – example configuration
+
+[global]
+verbose              = 0          # 1 = show live monitor on startup
+monitor_interval     = 1          # seconds between display refreshes
+global_max_connections = 8192     # hard cap across all rules
+log_level            = 2          # 0=ERR 1=WARN 2=INFO 3=DBG
+
+# ── TCP rule: HTTP rate-limiter ───────────────────────────────
+[web]
+src_host        = 0.0.0.0        # bind all IPv4 interfaces
+src_port        = 8080
+dst_host        = 127.0.0.1
+dst_port        = 80
+protocol        = tcp
+rate            = 1024.00        # 1 MB/s
+rate_unit       = kbytes         # kbytes | packets
+max_connections = 200            # per source IP
+timeout         = 60             # idle seconds before close
+
+# ── UDP rule: DNS relay with packet-rate limit ────────────────
+[dns-relay]
+src_host        = 0.0.0.0
+src_port        = 5300
+dst_host        = 8.8.8.8
+dst_port        = 53
+protocol        = udp
+rate            = 1000.00        # 1000 packets/s
+rate_unit       = packets
+max_connections = 50
+timeout         = 30
+
+# ── IPv6 TCP rule ─────────────────────────────────────────────
+[web-v6]
+src_host        = ::             # bind all IPv6 interfaces
+src_port        = 8081
+dst_host        = ::1
+dst_port        = 80
+protocol        = tcp
+rate            = 512.00
+rate_unit       = kbytes
+max_connections = 100
+timeout         = 60
