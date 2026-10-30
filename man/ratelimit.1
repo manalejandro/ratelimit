@@ -90,6 +90,12 @@ Show help and exit.
 Show version and exit.
 .PP
 Command-line options take precedence over the configuration file.
+Per-rule options (\fB\-r/\-u/\-p/\-n/\-m/\-t\fR) attach to the
+\fB\-\-src\fR/\fB\-\-dst\fR pair they follow (or to the pair being defined
+when placed before its \fB\-\-dst\fR). Duplicate listeners (same protocol,
+source host and source port) are detected after all options have been
+applied and dropped with a warning; the same source port may therefore be
+defined once for TCP and once for UDP.
 .SH PORT RANGES
 .B \-\-src
 and
@@ -172,6 +178,16 @@ UDP DNS relay at 500 packets/s plus a TLS proxy, with the live monitor:
 ratelimit \\
   \-\-src 0.0.0.0:5353 \-\-dst 10.0.0.1:53  \-\-rate 500 \-\-unit packets \-\-proto udp \\
   \-\-src [::]:8443    \-\-dst 10.0.0.1:443 \-\-rate 2048 \-\-verbose
+.RE
+.fi
+.PP
+Same port for both protocols (DNS-style):
+.PP
+.nf
+.RS
+ratelimit \\
+  \-\-src 0.0.0.0:53 \-\-dst 10.0.0.53:53 \-\-proto tcp \-\-rate 512 \-\-name dns\-tcp \\
+  \-\-src 0.0.0.0:53 \-\-dst 10.0.0.53:53 \-\-proto udp \-\-rate 2000 \-\-unit packets \-\-name dns\-udp
 .RE
 .fi
 .SH SEE ALSO

@@ -116,8 +116,14 @@ static int do_reload(proxy_ctx_t *proxy, config_t *cfg, const char *config_path)
     if (!nc) return -1;
     config_init(nc);
 
-    if (config_load(nc, config_path) != 0 || nc->rule_count == 0) {
-        LOG(LOG_ERR, "Reload aborted: config invalid or empty – keeping current state");
+    if (config_load(nc, config_path) != 0) {
+        LOG(LOG_ERR, "Reload aborted: cannot read config – keeping current state");
+        free(nc);
+        return -1;
+    }
+    config_dedup(nc);
+    if (nc->rule_count == 0) {
+        LOG(LOG_ERR, "Reload aborted: config has no rules – keeping current state");
         free(nc);
         return -1;
     }
@@ -157,6 +163,13 @@ static int do_reload(proxy_ctx_t *proxy, config_t *cfg, const char *config_path)
 /* ── Main ────────────────────────────────────────────────── */
 int main(int argc, char *argv[])
 {
+    /*
+     * stdout may be a pipe or the journal (systemd): keep it
+     * line-buffered so the rule table and monitor output appear
+     * immediately instead of sitting in a 4 KiB stdio buffer.
+     */
+    setvbuf(stdout, NULL, _IOLBF, 0);
+
     static const struct option long_opts[] = {
         { "src",         required_argument, 0, 's' },
         { "dst",         required_argument, 0, 'd' },
@@ -241,12 +254,9 @@ int main(int argc, char *argv[])
             snprintf(proto.name, sizeof proto.name, "%s", cur_name);
 
             int added = config_add_rule_range(cfg, &proto);
-            if (added < 0) {
-                fprintf(stderr, "Invalid rule for --dst '%s' (bad port ranges)\n", optarg);
-                return 1;
-            }
-            if (added == 0) {
-                fprintf(stderr, "Rule for --dst '%s' duplicates an existing listener\n", optarg);
+            if (added <= 0) {
+                fprintf(stderr, "Invalid rule for --dst '%s' (bad port ranges or rule table full)\n",
+                        optarg);
                 return 1;
             }
             /* Post-hoc flags (-r/-u/-p/-n/-m/-t after --dst) apply to every
@@ -343,6 +353,13 @@ int main(int argc, char *argv[])
     if (cli_verbose  >= 0) cfg->verbose          = cli_verbose;
     if (cli_interval >= 0) cfg->monitor_interval = cli_interval;
     if (cli_loglevel >= 0) cfg->log_level        = cli_loglevel;
+
+    /*
+     * Deduplicate only now: post-hoc flags (e.g. `-p udp` after `--dst`)
+     * have settled, so the same source port may legitimately appear once
+     * for TCP and once for UDP without tripping the duplicate check.
+     */
+    config_dedup(cfg);
 
     if (cfg->rule_count == 0) {
         fprintf(stderr, "No rules defined. Use --src/--dst or --config.\n");

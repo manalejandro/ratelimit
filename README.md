@@ -197,7 +197,17 @@ timeout         = 60
 | `--version` | `-V` | Show version | – |
 
 `-r/-u/-p/-n/-m/-t` may appear before `--dst` (applies to the rule being
-created) or after it (applies to the rule(s) just created, ranges included).
+created) or after it (applies to the rule(s) just created, ranges included),
+so place per-rule options right after their `--dst`. Duplicate-listener
+detection runs *after* all options settle, which means the **same source port
+can be defined for TCP and UDP** (e.g. DNS):
+
+```bash
+./ratelimit \
+  --src 0.0.0.0:53 --dst 10.0.0.53:53 --proto tcp --name dns-tcp --rate 512 \
+  --src 0.0.0.0:53 --dst 10.0.0.53:53 --proto udp --name dns-udp --rate 2000 --unit packets
+```
+
 Command-line options take precedence over the config file.
 
 ## Architecture

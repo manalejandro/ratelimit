@@ -279,6 +279,25 @@ running proxy is untouched unless the new config is good (see C2).
 - The blacklist is in-memory and per-process (not shared across `SO_REUSEPORT`
   siblings, not persisted across restarts) — documented behaviour.
 
+## Post-release fix — v1.1.1
+
+### M11. Duplicate detection ran before post-hoc CLI flags settled (found in the field)
+
+Defining the **same source port for TCP and UDP on one command line** — e.g.
+`-s IP:53 -d S:53 -p tcp … -s IP:53 -d S:53 -p udp`, or the port-range
+equivalent — failed with `Duplicate listener … ignored` warnings (one per
+port of the range) and, for single pairs, a hard error. Root cause: rules
+are created at `--dst` time using the *sticky* protocol (the second pair was
+born as a duplicate of the first), while the `-p` flag that differentiates
+them only applies *after* creation — but the duplicate check ran *during*
+creation.
+
+**Fix:** duplicate detection moved out of rule creation into `config_dedup()`,
+executed once after CLI parsing, config-file merging and every post-hoc flag
+have settled (also on the SIGHUP reload path). Genuine duplicates are still
+dropped with a warning naming the kept rule. **Tests:** T12 (dedup), T20
+(TCP+UDP on one port: CLI, ranges and config file).
+
 ## Verification
 
 - Clean build with `-Wall -Wextra -Wpedantic -Wshadow -Wformat=2

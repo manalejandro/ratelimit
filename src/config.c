@@ -56,17 +56,38 @@ static int parse_double_range(const char *s, double lo, double hi, double *out)
     return 0;
 }
 
-/* Duplicate check: same protocol + src host + src port already present? */
-static int find_dup(const config_t *cfg, const rule_t *r)
+/* Duplicate check helper: does rule `r` clash with `o`?
+ * Same protocol + src host + src port → only one can bind. */
+static int rules_clash(const rule_t *o, const rule_t *r)
 {
-    for (int i = 0; i < cfg->rule_count; i++) {
-        const rule_t *o = &cfg->rules[i];
-        if (o->protocol == r->protocol &&
-            o->src_port == r->src_port &&
-            strcmp(o->src_host, r->src_host) == 0)
-            return 1;
+    return o->protocol == r->protocol &&
+           o->src_port == r->src_port &&
+           strcmp(o->src_host, r->src_host) == 0;
+}
+
+int config_dedup(config_t *cfg)
+{
+    int removed = 0;
+    for (int i = 0; i < cfg->rule_count; ) {
+        const rule_t *r = &cfg->rules[i];
+        int dup_of = -1;
+        for (int j = 0; j < i; j++)
+            if (rules_clash(&cfg->rules[j], r)) { dup_of = j; break; }
+
+        if (dup_of >= 0) {
+            LOG(LOG_WARN, "Duplicate listener %s:%d/%s ignored (keeping rule '%s')",
+                r->src_host[0] ? r->src_host : "*", r->src_port,
+                r->protocol == PROTO_UDP ? "udp" : "tcp",
+                cfg->rules[dup_of].name);
+            for (int k = i; k < cfg->rule_count - 1; k++)
+                cfg->rules[k] = cfg->rules[k + 1];
+            cfg->rule_count--;
+            removed++;
+        } else {
+            i++;
+        }
     }
-    return 0;
+    return removed;
 }
 
 /* ── public API ──────────────────────────────────────────── */
@@ -174,13 +195,6 @@ int config_add_rule_range(config_t *cfg, const rule_t *proto)
                 snprintf(r.name, sizeof r.name, "rule%d", r.src_port);
             else
                 snprintf(r.name, sizeof r.name, "rule%d", cfg->rule_count + 1);
-        }
-
-        if (find_dup(cfg, &r)) {
-            LOG(LOG_WARN, "Duplicate listener %s:%d/%s ignored",
-                r.src_host[0] ? r.src_host : "*", r.src_port,
-                r.protocol == PROTO_UDP ? "udp" : "tcp");
-            continue;
         }
 
         cfg->rules[cfg->rule_count++] = r;

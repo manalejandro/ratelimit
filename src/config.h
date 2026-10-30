@@ -39,6 +39,13 @@ int  config_add_rule(config_t *cfg, const rule_t *rule);
  * Returns the number of rules added, or -1 on invalid ranges. */
 int  config_add_rule_range(config_t *cfg, const rule_t *proto);
 
+/* Remove rules duplicating an earlier listener (same protocol + src
+ * host + src port), keeping the first.  Must run AFTER all CLI
+ * post-hoc flags and config merging have settled, so that e.g. the
+ * same port can legitimately exist once for TCP and once for UDP.
+ * Returns the number of rules removed. */
+int  config_dedup(config_t *cfg);
+
 /* Validate every rule (rates, ports). 0 → ok, -1 → invalid (message logged). */
 int  config_validate(const config_t *cfg);
 

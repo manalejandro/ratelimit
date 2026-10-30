@@ -24,7 +24,7 @@
 #include <getopt.h>
 #include <poll.h>
 
-#define RATELIMIT_VERSION "1.1.0"
+#define RATELIMIT_VERSION "1.1.1"
 
 /* ── Limits ─────────────────────────────────────────────── */
 #define MAX_HOST_LEN      256

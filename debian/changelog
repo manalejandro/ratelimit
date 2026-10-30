@@ -1,3 +1,19 @@
+ratelimit (1.1.1) unstable; urgency=medium
+
+  * Fix: the same source port can again be defined for both TCP and UDP
+    on one command line (e.g. DNS-style setups, port ranges per
+    protocol). Duplicate-listener detection ran while rules were being
+    created, before post-hoc flags such as `-p udp` had been applied,
+    so the second pair was rejected as a duplicate of the first.
+    Deduplication now happens once, after CLI parsing and config-file
+    merging are complete; genuine duplicates are still dropped with a
+    warning that names the rule being kept.
+  * Fix: stdout is now line-buffered when not attached to a terminal, so
+    the startup rule table and the monitor appear immediately in
+    journalctl / log files instead of being held in the stdio buffer.
+
+ -- Alejandro M. <ale@manalejandro.com>  Fri, 30 Oct 2026 20:30:00 +0000
+
 ratelimit (1.1.0) unstable; urgency=medium
 
   * New upstream release.

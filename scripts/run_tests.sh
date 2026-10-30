@@ -383,16 +383,19 @@ grep -q '^\[sv-21131\]' "$WORK/saved.conf" && grep -q '^\[sv-21132\]' "$WORK/sav
 
 # ── T12: duplicate listener detection ────────────────────────────────
 sect "T12 duplicate rule detection"
-# CLI: an explicit duplicate pair is a hard error (protects against typos)
+# CLI: an exact duplicate pair is dropped with a warning (exit 0)
 if "$RL" -s 127.0.0.1:21140 -d 127.0.0.1:21101 \
          -s 127.0.0.1:21140 -d 127.0.0.1:21102 -S "$WORK/dup.conf" >/dev/null 2>"$WORK/dup.err"; then
-    ko "duplicate CLI rule rejected" "exited 0"
+    ok "duplicate CLI pair tolerated with warning (exit 0)"
 else
-    ok "duplicate CLI rule rejected (exit != 0)"
+    ko "duplicate CLI pair" "non-zero exit"
 fi
 grep -qi "duplicate" "$WORK/dup.err" \
     && ok "duplicate reported in stderr" \
     || ko "duplicate stderr message" "$(head -2 "$WORK/dup.err" | tr '\n' ' ')"
+nsec=$(grep -c '^\[' "$WORK/dup.conf" 2>/dev/null)
+[[ ${nsec:-0} -eq 2 ]] && ok "saved config keeps one copy (global + rule)" \
+                       || ko "dedup on save" "sections=${nsec:-0}"
 # Config file: duplicate sections are skipped with a warning, rest still loads
 cat > "$WORK/dup.conf" <<'EOF'
 [global]
@@ -691,6 +694,112 @@ while True:
     got += len(d)
 s.close()
 sys.exit(0 if got == len(payload) else 1)
+PYEOF
+
+# ── T20: same source port for TCP and UDP ────────────────────────────
+sect "T20 same port TCP+UDP (regression: dedup ran before post-hoc -p)"
+rl_start "$WORK/rl-mixed.log" \
+    -s 127.0.0.1:21450 -d 127.0.0.1:21101 -p tcp -n t53 \
+    -s 127.0.0.1:21450 -d 127.0.0.1:21201 -p udp -n u53 -L 2
+wait_port 21450 || ko "T20 TCP listener missing"
+python3 - <<'PYEOF' && ok "CLI: TCP and UDP coexist on one port" || ko "CLI tcp+udp same port"
+import socket, sys, time
+rc = 0
+try:
+    s = socket.create_connection(("127.0.0.1", 21450), 5); s.settimeout(3)
+    b = s.recv(64)
+    s.sendall(b"tcp\n"); time.sleep(0.2)
+    e = s.recv(64); s.close()
+    if b != b"ECHO-21101\n" or e != b"tcp\n": rc = 1
+except OSError as ex:
+    print("tcp:", ex); rc = 1
+try:
+    u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); u.settimeout(3)
+    u.sendto(b"udp", ("127.0.0.1", 21450))
+    d, _ = u.recvfrom(200)
+    if d != b"UECHO-21201:udp": rc = 1
+except OSError as ex:
+    print("udp:", ex); rc = 1
+sys.exit(rc)
+PYEOF
+grep -q "Loaded 2 rule" "$WORK/rl-mixed.log" \
+    && ok "both rules loaded" || ko "rule count" "$(grep Loaded "$WORK/rl-mixed.log" | head -1)"
+if grep -qi "duplicate" "$WORK/rl-mixed.log"; then
+    ko "spurious duplicate warning" "$(grep -i duplicate "$WORK/rl-mixed.log" | head -1)"
+else
+    ok "no spurious duplicate warning"
+fi
+
+# range style: 3 TCP + 3 UDP on the same source ports (user's 6-warning case)
+rl_start "$WORK/rl-mixedr.log" \
+    -s 127.0.0.1:21460-21462 -d 127.0.0.1:21101-21103 -p tcp \
+    -s 127.0.0.1:21460-21462 -d 127.0.0.1:21201 -p udp -L 2
+sleep 0.8
+grep -q "Loaded 6 rule" "$WORK/rl-mixedr.log" \
+    && ok "ranges: 6 rules (3 tcp + 3 udp) on shared ports" \
+    || ko "ranges rule count" "$(grep Loaded "$WORK/rl-mixedr.log" | head -1)"
+python3 - <<'PYEOF' && ok "ranges: TCP mapping + UDP fan-in on same ports" || ko "ranges tcp+udp"
+import socket, sys
+rc = 0
+for sport, dport in [(21460, 21101), (21461, 21102), (21462, 21103)]:
+    try:
+        s = socket.create_connection(("127.0.0.1", sport), 5); s.settimeout(3)
+        if s.recv(64) != b"ECHO-%d\n" % dport: rc = 1
+        s.close()
+    except OSError:
+        rc = 1
+    try:
+        u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); u.settimeout(3)
+        u.sendto(b"r", ("127.0.0.1", sport))
+        d, _ = u.recvfrom(200)
+        if d != b"UECHO-21201:r": rc = 1
+    except OSError:
+        rc = 1
+sys.exit(rc)
+PYEOF
+
+# config-file style: two sections, same src_port, different protocols
+cat > "$WORK/mixed.conf" <<'EOF'
+[global]
+log_level = 2
+[dns-t]
+src_host = 127.0.0.1
+src_port = 21470
+dst_host = 127.0.0.1
+dst_port = 21101
+protocol = tcp
+rate = 4096
+[dns-u]
+src_host = 127.0.0.1
+src_port = 21470
+dst_host = 127.0.0.1
+dst_port = 21201
+protocol = udp
+rate = 4096
+rate_unit = packets
+EOF
+rl_start "$WORK/rl-mixedc.log" -c "$WORK/mixed.conf"
+sleep 0.8
+grep -q "Loaded 2 rule" "$WORK/rl-mixedc.log" \
+    && ok "config: tcp+udp sections on same port both load" \
+    || ko "config tcp+udp" "$(grep Loaded "$WORK/rl-mixedc.log" | head -1)"
+python3 - <<'PYEOF' && ok "config: both protocols relay on the shared port" || ko "config tcp+udp relay"
+import socket, sys, time
+rc = 0
+try:
+    s = socket.create_connection(("127.0.0.1", 21470), 5); s.settimeout(3)
+    if s.recv(64) != b"ECHO-21101\n": rc = 1
+    s.close()
+except OSError:
+    rc = 1
+try:
+    u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); u.settimeout(3)
+    u.sendto(b"c", ("127.0.0.1", 21470))
+    d, _ = u.recvfrom(200)
+    if d != b"UECHO-21201:c": rc = 1
+except OSError:
+    rc = 1
+sys.exit(rc)
 PYEOF
 
 # ── summary ──────────────────────────────────────────────────────────
