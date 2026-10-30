@@ -13,7 +13,7 @@ fi
 
 echo "==> Building ratelimit ${V_CODE} .deb in Docker (debian:bookworm)…"
 mkdir -p dist
-rm -f dist/ratelimit_*.deb dist/ratelimit_*.changes dist/ratelimit_*.buildinfo
+rm -f dist/ratelimit*.deb dist/ratelimit*.changes dist/ratelimit*.buildinfo
 
 DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.build \
     --target dist --output type=local,dest=dist .
