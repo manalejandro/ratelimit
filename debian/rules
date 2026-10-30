@@ -1,0 +1,25 @@
+#!/usr/bin/make -f
+# See debhelper(7) (uncomment to enable)
+# export DH_VERBOSE = 1
+
+# dpkg-buildflags hardening is picked up through CFLAGS/LDFLAGS; make
+# sure everything is on (the upstream Makefile also adds its own).
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+override_dh_auto_install:
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/ratelimit PREFIX=/usr
+	install -D -m 0644 debian/ratelimit.conf \
+		$(CURDIR)/debian/ratelimit/etc/ratelimit/ratelimit.conf
+
+override_dh_auto_test:
+	# upstream has no unit-test target; integration tests run in
+	# docker (make docker-test), not during package build.
+
+override_dh_installsystemd:
+	# do not start/enable the proxy automatically on install: the
+	# shipped config has no active rules and binding ports is an
+	# explicit administrative decision.
+	dh_installsystemd --no-enable --no-start

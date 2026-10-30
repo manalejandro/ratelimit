@@ -1,0 +1,7 @@
+# Build artifacts to exclude from the Docker context
+# (dist/ must stay IN the context: Dockerfile.test installs dist/*.deb)
+.git
+obj
+ratelimit
+*.o
+*.d

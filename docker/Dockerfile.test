@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+#
+# Test image: installs the freshly built .deb on a clean Debian and runs
+# the integration suite against the INSTALLED package.
+#
+#   docker build -f docker/Dockerfile.test -t ratelimit-test .
+#   docker run --rm --init ratelimit-test
+#
+# Requires dist/*.deb (run `make docker-deb` first).
+
+FROM debian:bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
+        curl \
+        procps \
+        coreutils \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY dist/ /tmp/dist/
+RUN apt-get update \
+    && apt-get install -y /tmp/dist/ratelimit_*.deb \
+    && rm -rf /tmp/dist /var/lib/apt/lists/*
+
+COPY scripts/run_tests.sh /usr/local/bin/run_tests
+RUN chmod +x /usr/local/bin/run_tests
+
+# Sanity: the package must provide these paths
+RUN test -x /usr/bin/ratelimit \
+    && test -f /etc/ratelimit/ratelimit.conf \
+    && test -f /lib/systemd/system/ratelimit.service \
+    && test -f /usr/share/man/man1/ratelimit.1.gz \
+    && /usr/bin/ratelimit --version
+
+CMD ["/usr/local/bin/run_tests"]

@@ -1,6 +1,14 @@
 # Build artefacts
 obj/
 ratelimit
+dist/
+
+# Debian packaging artefacts
+debian/.debhelper/
+debian/ratelimit/
+debian/ratelimit.substvars
+debian/files
+debian/debhelper-build-stamp
 
 # Editor / IDE
 .vscode/

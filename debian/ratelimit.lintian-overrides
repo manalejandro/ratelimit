@@ -1,0 +1,3 @@
+# systemd is the init on every supported deployment target; the unit is
+# intentionally shipped without a sysvinit fallback script.
+package-supports-alternative-init-but-no-init.d-script [lib/systemd/system/ratelimit.service]

@@ -20,13 +20,14 @@ typedef struct {
     int           rule_count;
     config_t     *cfg;
     int           interval;       /* seconds */
-    volatile int  running;
+    atomic_int    running;
+    int           started;        /* 1 once the display thread exists */
     pthread_t     thread;
 } monitor_ctx_t;
 
 int  monitor_init (monitor_ctx_t *ctx, config_t *cfg, int interval);
-void monitor_start(monitor_ctx_t *ctx);
-void monitor_stop (monitor_ctx_t *ctx);
+int  monitor_start(monitor_ctx_t *ctx);   /* 0 on success, -1 on failure */
+void monitor_stop (monitor_ctx_t *ctx);   /* no-op when not started      */
 
 /* Called by proxy threads to record events */
 void mon_conn  (monitor_ctx_t *ctx, int idx, int opened);   /* opened=1 → new, 0 → closed */

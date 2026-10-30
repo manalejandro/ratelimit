@@ -1,0 +1,27 @@
+Source: ratelimit
+Section: net
+Priority: optional
+Maintainer: Alejandro M. <ale@manalejandro.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://github.com/manalejandro/ratelimit
+Rules-Requires-Root: no
+
+Package: ratelimit
+Architecture: linux-any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: bidirectional multi-rule TCP/UDP rate-limiting proxy
+ ratelimit listens on one or more source host:port pairs (single ports
+ or ranges) and forwards traffic to a destination while enforcing
+ per-connection bandwidth limits with a token bucket, independently in
+ both directions.
+ .
+ Features:
+  - TCP and UDP, IPv4 and IPv6 (dual-stack wildcards)
+  - port-range mapping (e.g. 8000-8009 -> 9000-9009)
+  - kbytes/s or packets/s limiting per rule
+  - live monitor table, INI-style config file, SIGHUP hot reload
+    without dropping established connections
+  - per-source-IP connection limits, automatic blacklisting,
+    global connection cap, idle timeouts
+  - systemd unit and hardened build (PIE, RELRO, FORTIFY)

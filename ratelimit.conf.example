@@ -41,3 +41,18 @@ rate            = 512.00
 rate_unit       = kbytes
 max_connections = 100
 timeout         = 60
+
+# ── Port-range rule: 9000-9009 → 10.0.0.1:8000-8009 ───────────
+# Both ranges must span the same number of ports (max 1024); the
+# section expands into one rule per port pair, named svc-9000,
+# svc-9001, …
+[svc]
+src_host        = 0.0.0.0
+src_port        = 9000-9009
+dst_host        = 10.0.0.1
+dst_port        = 8000-8009
+protocol        = tcp
+rate            = 256.00
+rate_unit       = kbytes
+max_connections = 50
+timeout         = 60

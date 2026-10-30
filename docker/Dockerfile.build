@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+#
+# Builds the ratelimit .deb inside a clean Debian bookworm chroot and
+# exports the artifacts. Usage (from the repo root):
+#
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.build \
+#       --target dist --output type=local,dest=dist .
+#
+# (scripts/build-deb.sh / `make docker-deb` wrap this.)
+
+FROM debian:bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        debhelper \
+        dpkg-dev \
+        lintian \
+        fakeroot \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . /src
+
+# Full binary build; artifacts land in / (parent of /src)
+RUN dpkg-buildpackage -us -uc -b
+
+RUN mkdir -p /dist && cp /ratelimit*.deb /ratelimit*.changes /ratelimit*.buildinfo /dist/
+
+# Lintian: report, but do not fail the build on pedantic tags
+RUN lintian --display-info /dist/ratelimit_*.deb || true
+
+# Export stage: `docker build --target dist --output ...` picks this up
+FROM scratch AS dist
+COPY --from=builder /dist/ /

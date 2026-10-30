@@ -1,0 +1,183 @@
+.TH RATELIMIT 1 "2026-10-30" "ratelimit 1.1.0" "User Commands"
+.SH NAME
+ratelimit \- bidirectional, multi-rule TCP/UDP rate-limiting proxy
+.SH SYNOPSIS
+.B ratelimit
+[\fIOPTIONS\fR]
+.B \-\-src
+\fIHOST:PORT[\-PORT]\fR
+.B \-\-dst
+\fIHOST:PORT[\-PORT]\fR
+[\fI\-\-rate\fR N] ...
+.br
+.B ratelimit
+.B \-\-config
+\fIFILE\fR [\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B ratelimit
+is a small proxy that listens on one or more source addresses and
+forwards traffic to a destination, enforcing per-connection bandwidth
+limits with a token-bucket algorithm in both directions independently.
+.PP
+It supports TCP and UDP, IPv4 and IPv6, multiple simultaneous rules,
+port-range mapping, per-source-IP connection limits with automatic
+blacklisting of abusers, idle-connection timeouts, a live monitor and
+hot configuration reloads on
+.BR SIGHUP .
+.SH OPTIONS
+.TP
+.BR \-s ", " \-\-src =\fIHOST:PORT[\-PORT]\fR
+Address to listen on. Repeatable; each
+.B \-\-src
+must be followed by a
+.BR \-\-dst .
+IPv6 addresses use bracket notation: \fB[::1]:8080\fR. A port range
+\fBHOST:P1\-P2\fR is also accepted (see \fBPORT RANGES\fR).
+An empty host (e.g. \fB:8080\fR) binds all interfaces, dual-stack.
+.TP
+.BR \-d ", " \-\-dst =\fIHOST:PORT[\-PORT]\fR
+Destination to forward to. Hostnames are resolved at connection time.
+.TP
+.BR \-r ", " \-\-rate =\fIVALUE\fR
+Rate limit value (default: 1024). Applies to the rule being defined, or
+retroactively to the last single-port rule created.
+.TP
+.BR \-u ", " \-\-unit =\fIkbytes|packets\fR
+Rate unit (default: kbytes). \fIkbytes\fR limits bytes per second;
+\fIpackets\fR limits datagrams/chunks per second.
+.TP
+.BR \-p ", " \-\-proto =\fItcp|udp\fR
+Protocol (default: tcp).
+.TP
+.BR \-n ", " \-\-name =\fINAME\fR
+Rule name for the next \fB\-\-src\fR/\fB\-\-dst\fR pair (or of the last
+single-port rule created).
+.TP
+.BR \-c ", " \-\-config =\fIFILE\fR
+Load configuration from
+.IR FILE .
+Rules from the file and from the command line are merged. Required for
+.B SIGHUP
+hot reloads.
+.TP
+.BR \-S ", " \-\-save\-config =\fIFILE\fR
+Write the effective configuration to
+.I FILE
+and exit.
+.TP
+.BR \-v ", " \-\-verbose
+Show the live connection monitor.
+.TP
+.BR \-i ", " \-\-interval =\fISECS\fR
+Monitor refresh interval in seconds (default: 1).
+.TP
+.BR \-m ", " \-\-max\-conn =\fIN\fR
+Maximum simultaneous connections per source IP, per rule (default: 200).
+An IP rejected three times in a row is blacklisted for 300 seconds.
+.TP
+.BR \-t ", " \-\-timeout =\fISECS\fR
+Idle connection timeout in seconds (default: 60). A connection is closed
+only when no data flowed in \fIeither\fR direction for that long.
+0 disables the timeout.
+.TP
+.BR \-L ", " \-\-log\-level =\fI0\-3\fR
+0=ERR, 1=WARN, 2=INFO (default), 3=DBG.
+.TP
+.BR \-h ", " \-\-help
+Show help and exit.
+.TP
+.BR \-V ", " \-\-version
+Show version and exit.
+.PP
+Command-line options take precedence over the configuration file.
+.SH PORT RANGES
+.B \-\-src
+and
+.B \-\-dst
+accept port ranges of the form \fIHOST:P1\-P2\fR (max 1024 ports).
+Both ranges must span the same number of ports, or the destination may
+be a single port shared by all source ports. Every pair expands into an
+independent rule with its own listener and rate limiter:
+.PP
+.nf
+.RS
+ratelimit \-s 0.0.0.0:8000\-8009 \-d 10.0.0.1:9000\-9009 \-r 512 \-n web
+.RE
+.fi
+.PP
+maps 8000\(->9000, 8001\(->9001, ..., 8009\(->9009. Expanded rules are named
+\fIbase\-port\fR (\fBweb\-8000\fR, \fBweb\-8001\fR, ...). The same syntax
+works in the configuration file:
+.PP
+.nf
+.RS
+[web]
+src_host = 0.0.0.0
+src_port = 8000\-8009
+dst_host = 10.0.0.1
+dst_port = 9000\-9009
+rate     = 512
+.RE
+.fi
+.SH RATE LIMITING
+A token bucket is applied per connection and direction. In
+.I kbytes
+mode the bucket refills at \fIrate \(mu 1024\fR bytes/s with a burst
+capacity of 4 \(mu that value; in
+.I packets
+mode it refills at \fIrate\fR tokens/s. TCP traffic is delayed
+(backpressure); UDP datagrams that find an empty bucket are dropped and
+counted in the monitor.
+.SH SIGNALS
+.TP
+.BR SIGINT ", " SIGTERM
+Graceful shutdown: listeners stop, in-flight connections get ~1 second
+to finish, then the process exits.
+.TP
+.B SIGHUP
+Reload the configuration file (requires
+.BR \-\-config ).
+The new configuration is validated before anything is torn down; an
+invalid file is ignored and the current state is kept. Existing
+connections keep running until they close naturally (downtime-free
+reload); new connections follow the new rules.
+.SH SECURITY
+Per-source-IP connection limits, automatic blacklisting (300 s after
+3 consecutive rejections), a global connection cap
+(\fBglobal_max_connections\fR), bounded outbound connect timeouts (5 s),
+idle timeouts, fixed-size buffers and session tables,
+.B SIGPIPE
+suppression and hardened build flags (PIE, RELRO, FORTIFY,
+stack-protector).
+.SH FILES
+.TP
+.I /etc/ratelimit/ratelimit.conf
+Default configuration file used by the systemd unit.
+.SH EXIT STATUS
+0 on success (clean shutdown or \fB\-\-save\-config\fR/\fB\-\-help\fR/\fB\-\-version\fR),
+1 on invalid arguments, invalid configuration, or if no listener could be started.
+.SH EXAMPLES
+Single 512 kB/s TCP proxy:
+.PP
+.nf
+.RS
+ratelimit \-\-src 0.0.0.0:8080 \-\-dst 127.0.0.1:80 \-\-rate 512
+.RE
+.fi
+.PP
+UDP DNS relay at 500 packets/s plus a TLS proxy, with the live monitor:
+.PP
+.nf
+.RS
+ratelimit \\
+  \-\-src 0.0.0.0:5353 \-\-dst 10.0.0.1:53  \-\-rate 500 \-\-unit packets \-\-proto udp \\
+  \-\-src [::]:8443    \-\-dst 10.0.0.1:443 \-\-rate 2048 \-\-verbose
+.RE
+.fi
+.SH SEE ALSO
+The full documentation is installed at
+.IR /usr/share/doc/ratelimit/README.md .
+.SH AUTHORS
+Alejandro M. \(em <https://github.com/manalejandro/ratelimit>
+.SH COPYRIGHT
+MIT License. See /usr/share/doc/ratelimit/copyright.

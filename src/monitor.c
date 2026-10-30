@@ -21,7 +21,7 @@ static void *monitor_thread_fn(void *arg)
 {
     monitor_ctx_t *ctx = (monitor_ctx_t *)arg;
 
-    while (ctx->running) {
+    while (atomic_load(&ctx->running)) {
         printf(ANSI_CLR);
         printf(ANSI_BOLD ANSI_CYAN
                "  ratelimit – live monitor  (Ctrl-C to quit)\n" ANSI_RESET);
@@ -61,7 +61,9 @@ static void *monitor_thread_fn(void *arg)
         printf("\n");
         fflush(stdout);
 
-        sleep((unsigned)ctx->interval);
+        /* sleep in short slices so monitor_stop() is prompt */
+        for (int i = 0; i < ctx->interval * 5 && atomic_load(&ctx->running); i++)
+            usleep(200 * 1000);
     }
     return NULL;
 }
@@ -74,20 +76,30 @@ int monitor_init(monitor_ctx_t *ctx, config_t *cfg, int interval)
     memset(ctx, 0, sizeof(*ctx));
     ctx->cfg        = cfg;
     ctx->rule_count = cfg->rule_count;
+    if (ctx->rule_count > MAX_RULES) ctx->rule_count = MAX_RULES;
     ctx->interval   = interval > 0 ? interval : 1;
+    atomic_store(&ctx->running, 0);
     return 0;
 }
 
-void monitor_start(monitor_ctx_t *ctx)
+int monitor_start(monitor_ctx_t *ctx)
 {
-    ctx->running = 1;
-    pthread_create(&ctx->thread, NULL, monitor_thread_fn, ctx);
+    if (ctx->started) return 0;
+    atomic_store(&ctx->running, 1);
+    if (pthread_create(&ctx->thread, NULL, monitor_thread_fn, ctx) != 0) {
+        atomic_store(&ctx->running, 0);
+        return -1;
+    }
+    ctx->started = 1;
+    return 0;
 }
 
 void monitor_stop(monitor_ctx_t *ctx)
 {
-    ctx->running = 0;
+    if (!ctx->started) return;
+    atomic_store(&ctx->running, 0);
     pthread_join(ctx->thread, NULL);
+    ctx->started = 0;
 }
 
 void mon_conn(monitor_ctx_t *ctx, int idx, int opened)
@@ -97,8 +109,12 @@ void mon_conn(monitor_ctx_t *ctx, int idx, int opened)
         atomic_fetch_add(&ctx->stats[idx].total_conns,  1);
         atomic_fetch_add(&ctx->stats[idx].active_conns, 1);
     } else {
-        long v = atomic_fetch_sub(&ctx->stats[idx].active_conns, 1);
-        if (v <= 0) atomic_store(&ctx->stats[idx].active_conns, 0);
+        /* never go below zero, even under concurrent updates */
+        long v = atomic_load(&ctx->stats[idx].active_conns);
+        while (v > 0 &&
+               !atomic_compare_exchange_weak(&ctx->stats[idx].active_conns,
+                                             &v, v - 1))
+            ;
     }
 }
 

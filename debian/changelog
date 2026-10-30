@@ -1,0 +1,53 @@
+ratelimit (1.1.0) unstable; urgency=medium
+
+  * New upstream release.
+    - Feature: port-range mapping on the command line and in the config
+      file (--src HOST:8000-8010 --dst HOST:9000-9010).
+    - Fix: token-bucket deadlock when a received chunk exceeded the
+      bucket capacity (rates below 64 kB/s could hang a connection
+      forever); recv chunks are now clamped to the bucket size.
+    - Fix: use-after-free on SIGHUP reload — shared security/monitor
+      state is now heap-allocated and refcounted, so in-flight
+      connections drain safely; reloads validate the new config before
+      tearing anything down and no longer kill established connections.
+    - Fix: UDP epoll registrations pointed at array slots moved by
+      swap-remove, which could deliver replies to the wrong client or
+      touch closed sockets; sessions are now stable heap nodes.
+    - Fix: UDP session teardown loop leaked half of the sessions
+      (file descriptors) on stop/reload.
+    - Fix: signal race between the main loop and pause() could hang
+      shutdown forever; signals are now consumed synchronously via
+      sigwait().
+    - Fix: per-rule max_connections was silently ignored (security
+      context was initialised from global_max_connections/rule_count).
+    - Fix: automatic blacklisting was unreachable dead code; it now
+      triggers after 3 consecutive per-IP rejections.
+    - Fix: the per-IP limit did not apply to UDP (slot taken/released
+      per packet); it is now held for the lifetime of a session.
+    - Fix: global_max_connections was never enforced; it now caps TCP
+      connections plus UDP sessions.
+    - Fix: idle timeout killed connections that were active in one
+      direction; idleness is now tracked across both directions, and
+      EINTR no longer tears connections down.
+    - Fix: DNS resolution and blocking connect() ran in the accept
+      loop, letting a dead destination stall a whole rule (DoS); they
+      now happen per-connection with a 5 s timeout.
+    - Fix: out-of-bounds read parsing -n/--name (memcpy of 63 bytes
+      from argv) and the config section header; strict validation of
+      all numeric options (no more atoi()).
+    - Fix: pthread_create failures leaked connections or joined
+      uninitialised thread ids; monitor join is guarded by a started
+      flag; EMFILE/ENFILE in accept() now backs off instead of
+      hot-spinning.
+    - Fix: wildcard binds (empty host) tried IPv6-only first and became
+      unreachable on IPv4; wildcards are now dual-stack.
+    - Improvement: correct TCP half-close semantics, TCP_NODELAY on
+      proxied connections, separate up/down UDP buckets, duplicate
+      listener detection, 512 kB thread stacks, bounded rate-limit
+      sleep slices, CRLF-tolerant config parser, unknown-key warnings.
+    - Hardened build: PIE, full RELRO, FORTIFY_SOURCE=2,
+      stack-protector-strong, format-security.
+  * Initial Debian packaging: systemd unit (disabled by default),
+    man page, default configuration in /etc/ratelimit/.
+
+ -- Alejandro M. <ale@manalejandro.com>  Fri, 30 Oct 2026 12:00:00 +0000
