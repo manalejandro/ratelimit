@@ -139,9 +139,15 @@ sleep 1
 sect "T01 package + CLI sanity"
 if dpkg -L ratelimit >/dev/null 2>&1; then
     for f in /usr/bin/ratelimit /etc/ratelimit/ratelimit.conf \
-             /lib/systemd/system/ratelimit.service /usr/share/man/man1/ratelimit.1.gz; do
+             /usr/share/man/man1/ratelimit.1.gz; do
         dpkg -L ratelimit | grep -qx "$f" && ok "deb ships $f" || ko "deb ships $f" "missing"
     done
+    # systemd unit path differs: Debian → /lib/…, Ubuntu (usrmerge) → /usr/lib/…
+    if dpkg -L ratelimit | grep -qE '^/(usr/)?lib/systemd/system/ratelimit\.service$'; then
+        ok "deb ships the systemd unit"
+    else
+        ko "deb ships the systemd unit" "missing"
+    fi
 else
     log "  (dpkg not available – skipping package content checks)"
 fi

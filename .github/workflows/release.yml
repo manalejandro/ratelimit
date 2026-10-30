@@ -69,16 +69,28 @@ jobs:
           set -euo pipefail
           dpkg-buildpackage -us -uc -b
           mkdir -p dist
-          mv ../ratelimit_*.deb ../ratelimit_*.changes ../ratelimit_*.buildinfo dist/
+          # dpkg >= 1.22 (Ubuntu runners) renames the automatic dbgsym
+          # package to *.ddeb – move it along so .changes stays consistent.
+          shopt -s nullglob
+          mv ../ratelimit_*.deb ../ratelimit_*.changes ../ratelimit_*.buildinfo \
+             ../ratelimit-dbgsym_*.deb ../ratelimit-dbgsym_*.ddeb dist/
 
       - name: Lintian
-        run: lintian --display-info dist/ratelimit_*.changes
+        run: |
+          set -euo pipefail
+          ARCH="$(dpkg-architecture -qDEB_HOST_ARCH)"
+          # Lint the binary package only: Ubuntu's lintian rejects the
+          # Debian 'unstable' distribution inside .changes files. The
+          # changes-level check runs in the Debian-based docker pipeline
+          # (make docker-deb / docker/Dockerfile.build).
+          lintian --display-info dist/ratelimit_*_"${ARCH}".deb
 
       - name: Install package + run integration tests
         run: |
           set -euo pipefail
           ARCH="$(dpkg-architecture -qDEB_HOST_ARCH)"
-          sudo apt-get install -y "./dist/ratelimit_*_${ARCH}.deb"
+          # unquoted glob so the shell expands it; apt does not glob paths
+          sudo apt-get install -y ./dist/ratelimit_*_"${ARCH}".deb
           ratelimit --version
           bash scripts/run_tests.sh
 
@@ -88,6 +100,7 @@ jobs:
           name: ratelimit-debs-${{ matrix.arch }}
           path: |
             dist/*.deb
+            dist/*.ddeb
             dist/*.buildinfo
           if-no-files-found: error
 
@@ -115,6 +128,7 @@ jobs:
           token: ${{ secrets.TOKEN }}
           files: |
             dist/*.deb
+            dist/*.ddeb
             dist/*.buildinfo
           fail_on_unmatched_files: true
           generate_release_notes: true

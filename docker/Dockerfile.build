@@ -21,10 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 COPY . /src
 
-# Full binary build; artifacts land in / (parent of /src)
+# Full binary build; artifacts land in / (parent of /src).
+# dpkg >= 1.22 renames the dbgsym package to *.ddeb – collect both spellings.
 RUN dpkg-buildpackage -us -uc -b
 
-RUN mkdir -p /dist && cp /ratelimit*.deb /ratelimit*.changes /ratelimit*.buildinfo /dist/
+RUN mkdir -p /dist && find / -maxdepth 1 -name 'ratelimit*' \
+        \( -name '*.deb' -o -name '*.ddeb' -o -name '*.changes' -o -name '*.buildinfo' \) \
+        -exec mv {} /dist/ \;
 
 # Lintian: report, but do not fail the build on pedantic tags
 RUN lintian --display-info /dist/ratelimit_*.deb || true

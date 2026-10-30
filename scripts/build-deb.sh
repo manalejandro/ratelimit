@@ -13,7 +13,7 @@ fi
 
 echo "==> Building ratelimit ${V_CODE} .deb in Docker (debian:bookworm)…"
 mkdir -p dist
-rm -f dist/ratelimit*.deb dist/ratelimit*.changes dist/ratelimit*.buildinfo
+rm -f dist/ratelimit*.deb dist/ratelimit*.ddeb dist/ratelimit*.changes dist/ratelimit*.buildinfo
 
 # Cross-build for other architectures (e.g. Raspberry Pi) with:
 #   PLATFORM=linux/arm64 ./scripts/build-deb.sh     # Pi 3/4/5 (64-bit OS)
