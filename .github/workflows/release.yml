@@ -1,0 +1,120 @@
+# Build ratelimit .deb packages (amd64 + arm64) and attach them to a
+# GitHub Release for the pushed tag.
+#
+# Trigger:  git tag v1.1.1 && git push origin v1.1.1
+#           (or manually via workflow_dispatch – artifacts are then only
+#            attached to the run, no release is created)
+#
+# amd64 builds on ubuntu-latest, arm64 builds natively on GitHub's
+# ubuntu-24.04-arm runners (public repos: free; no qemu needed). Each
+# architecture runs the full integration suite against the freshly built
+# package before anything is published.
+
+name: Release (.deb amd64 + arm64)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build + test (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build & test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper dpkg-dev lintian fakeroot \
+            python3 curl procps coreutils
+
+      - name: Version consistency (tag ↔ debian/changelog ↔ src/common.h)
+        run: |
+          set -euo pipefail
+          V_DEB="$(dpkg-parsechangelog -S Version)"
+          V_CODE="$(sed -nE 's/.*RATELIMIT_VERSION[[:space:]]*"([^"]+)".*/\1/p' src/common.h)"
+          echo "changelog=${V_DEB} code=${V_CODE} ref=${GITHUB_REF_NAME}"
+          [ -n "$V_DEB" ] && [ "$V_CODE" = "$V_DEB" ] || {
+            echo "::error::version mismatch: common.h=${V_CODE} changelog=${V_DEB}"; exit 1; }
+          case "$GITHUB_REF" in
+            refs/tags/v*)
+              TAG="${GITHUB_REF_NAME#v}"
+              [ "$TAG" = "$V_DEB" ] || {
+                echo "::error::tag v${TAG} does not match package version ${V_DEB}"; exit 1; }
+              ;;
+          esac
+
+      - name: Build package
+        run: |
+          set -euo pipefail
+          dpkg-buildpackage -us -uc -b
+          mkdir -p dist
+          mv ../ratelimit_*.deb ../ratelimit_*.changes ../ratelimit_*.buildinfo dist/
+
+      - name: Lintian
+        run: lintian --display-info dist/ratelimit_*.changes
+
+      - name: Install package + run integration tests
+        run: |
+          set -euo pipefail
+          ARCH="$(dpkg-architecture -qDEB_HOST_ARCH)"
+          sudo apt-get install -y "./dist/ratelimit_*_${ARCH}.deb"
+          ratelimit --version
+          bash scripts/run_tests.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ratelimit-debs-${{ matrix.arch }}
+          path: |
+            dist/*.deb
+            dist/*.buildinfo
+          if-no-files-found: error
+
+  release:
+    name: attach .debs to tag release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ratelimit-debs-*
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lR dist/
+
+      - name: Create/update release for this tag
+        uses: softprops/action-gh-release@v2
+        with:
+          # Personal/app token stored in the repo secret TOKEN
+          # (needs repo scope to create releases).
+          token: ${{ secrets.TOKEN }}
+          files: |
+            dist/*.deb
+            dist/*.buildinfo
+          fail_on_unmatched_files: true
+          generate_release_notes: true

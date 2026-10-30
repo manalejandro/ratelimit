@@ -1,5 +1,7 @@
 # ratelimit
 
+[![Release (.deb amd64 + arm64)](https://github.com/manalejandro/ratelimit/actions/workflows/release.yml/badge.svg)](https://github.com/manalejandro/ratelimit/actions/workflows/release.yml)
+
 A bidirectional, multi-rule TCP/UDP rate-limiting proxy for IPv4 and IPv6.  
 Place it in front of any service to enforce bandwidth limits at the connection level before traffic reaches your reverse proxy or application.
 
@@ -41,7 +43,33 @@ make docker-deb            # → dist/ratelimit_<version>_amd64.deb
 sudo apt install ./dist/ratelimit_*.deb
 ```
 
-(or natively: `dpkg-buildpackage -us -uc -b` with `debhelper` installed).
+Cross-build for other architectures (e.g. a Raspberry Pi) from any host:
+
+```bash
+docker run --privileged --rm tonistiigi/binfmt --install all   # once, qemu
+PLATFORM=linux/arm64  ./scripts/build-deb.sh   # Pi 3/4/5 with a 64-bit OS
+PLATFORM=linux/arm/v7 ./scripts/build-deb.sh   # Pi OS 32-bit
+```
+
+(or natively on the Pi itself: `sudo apt install build-essential debhelper && dpkg-buildpackage -us -uc -b`).
+
+### Releases (GitHub Actions)
+
+Pushing a version tag builds `.deb` packages for **amd64 and arm64** natively
+(arm64 uses GitHub's ARM runners — no emulation), runs lintian and the full
+integration suite against each freshly built package, and attaches every
+artifact to a GitHub Release created for that tag:
+
+```bash
+git tag v1.1.1
+git push origin v1.1.1
+```
+
+The workflow refuses to run if the tag, `debian/changelog` and
+`src/common.h` versions disagree. Release uploads authenticate with the
+repository secret **`TOKEN`** (Settings → Secrets and variables → Actions):
+a fine-grained PAT (or classic token) with *Contents: Read and write* on
+this repository is sufficient.
 
 The package installs `/usr/bin/ratelimit`, the man page, a documented
 default config at `/etc/ratelimit/ratelimit.conf` and a **disabled-by-default**

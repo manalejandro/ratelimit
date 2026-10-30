@@ -15,8 +15,18 @@ echo "==> Building ratelimit ${V_CODE} .deb in Docker (debian:bookworm)…"
 mkdir -p dist
 rm -f dist/ratelimit*.deb dist/ratelimit*.changes dist/ratelimit*.buildinfo
 
-DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.build \
-    --target dist --output type=local,dest=dist .
+# Cross-build for other architectures (e.g. Raspberry Pi) with:
+#   PLATFORM=linux/arm64 ./scripts/build-deb.sh     # Pi 3/4/5 (64-bit OS)
+#   PLATFORM=linux/arm/v7 ./scripts/build-deb.sh    # Pi OS 32-bit
+# Requires docker buildx + qemu binfmt on the host:
+#   docker run --privileged --rm tonistiigi/binfmt --install all
+BUILD_ARGS=(-f docker/Dockerfile.build --target dist --output type=local,dest=dist)
+if [[ -n "${PLATFORM:-}" ]]; then
+    echo "==> Target platform: $PLATFORM"
+    BUILD_ARGS+=(--platform "$PLATFORM")
+fi
+
+DOCKER_BUILDKIT=1 docker build "${BUILD_ARGS[@]}" .
 
 echo
 echo "==> Artifacts:"
